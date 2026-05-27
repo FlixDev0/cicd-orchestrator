@@ -1,0 +1,34 @@
+# Core
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+pydantic-settings==2.2.1
+
+# Database
+sqlalchemy==2.0.30
+alembic==1.13.1
+aiosqlite==0.20.0        # SQLite async (dev)
+asyncpg==0.29.0          # PostgreSQL (prod)
+
+# Docker
+docker==7.0.0
+
+# YAML parsing
+PyYAML==6.0.1
+
+# Async utilities
+anyio==4.3.0
+
+# WebSocket (incluido en fastapi)
+websockets==12.0
+
+# Crypto (secretos)
+cryptography==42.0.7
+
+# Graphs (DAG)
+networkx==3.3
+
+# Testing
+pytest==8.2.0
+pytest-asyncio==0.23.6
+httpx==0.27.0            # test client para FastAPI

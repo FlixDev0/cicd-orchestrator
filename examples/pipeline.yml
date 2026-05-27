@@ -1,0 +1,54 @@
+name: app-pipeline
+description: "Pipeline de ejemplo: build, lint, test y deploy"
+
+on:
+  push:
+    branches: [main, develop]
+  manual: true
+
+env:
+  APP_ENV: production
+  PYTHON_VERSION: "3.11"
+
+jobs:
+
+  build:
+    name: "Compilar aplicación"
+    image: python:3.11-slim
+    steps:
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Compilar
+        run: echo "Build completado"
+        artifact: app.tar.gz
+
+  lint:
+    name: "Análisis estático"
+    image: python:3.11-slim
+    needs: []
+    steps:
+      - name: Ruff linter
+        run: echo "Lint OK"
+        timeout: 120
+
+  test:
+    name: "Tests unitarios"
+    image: python:3.11-slim
+    needs: [build]
+    steps:
+      - name: Tests unitarios
+        run: echo "Tests OK"
+        timeout: 300
+
+      - name: Coverage report
+        run: echo "Coverage 85%"
+
+  deploy:
+    name: "Desplegar en producción"
+    image: alpine:3.18
+    needs: [test, lint]
+    condition: "branch == 'main'"
+    steps:
+      - name: Deploy
+        run: echo "Deploy exitoso"
