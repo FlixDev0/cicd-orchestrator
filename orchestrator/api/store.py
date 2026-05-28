@@ -7,11 +7,9 @@ pero la interfaz del store no cambia — el resto de la API no nota la diferenci
 """
 
 from __future__ import annotations
-
 import uuid
 from datetime import datetime
 from typing import Any
-
 from orchestrator.core.models import PipelineDefinition, PipelineRun, RunStatus
 
 
