@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CI/CD Orchestrator</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/dashboard/style.css">
+
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    CI/CD Orchestrator
+  </div>
+  <div class="header-right">
+    <div class="api-status" id="apiStatus">
+      <div class="dot"></div>
+      <span id="apiStatusText">conectando...</span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside>
+    <div class="sidebar-label">Navegación</div>
+    <button class="nav-btn active" onclick="showSection('runs')" id="nav-runs">
+      <span class="nav-icon">⚡</span> Runs
+    </button>
+    <button class="nav-btn" onclick="showSection('pipelines')" id="nav-pipelines">
+      <span class="nav-icon">📋</span> Pipelines
+    </button>
+    <button class="nav-btn" onclick="showSection('new-pipeline')" id="nav-new-pipeline">
+      <span class="nav-icon">＋</span> Nuevo Pipeline
+    </button>
+
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-label">Sistema</div>
+    <button class="nav-btn" onclick="refreshAll()">
+      <span class="nav-icon">↻</span> Refrescar
+    </button>
+  </aside>
+
+  <!-- STATS BAR -->
+  <div class="stats-bar">
+    <div class="stat">
+      <div class="stat-val" id="statTotal">—</div>
+      <div class="stat-label">Total runs</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val green" id="statSuccess">—</div>
+      <div class="stat-label">Exitosos</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val red" id="statFailed">—</div>
+      <div class="stat-label">Fallidos</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val yellow" id="statRunning">—</div>
+      <div class="stat-label">En curso</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <main>
+
+    <!-- ── SECTION: RUNS ── -->
+    <div id="section-runs">
+      <div class="panel" id="runsPanel">
+        <div class="panel-header">
+          <span class="panel-title">Ejecuciones recientes</span>
+          <button class="btn btn-sm" onclick="loadRuns()">↻ Actualizar</button>
+        </div>
+        <div id="runsContent">
+          <div class="empty"><div class="empty-icon">⚡</div>Cargando runs...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SECTION: RUN DETAIL ── -->
+    <div id="section-run-detail" style="display:none;">
+      <div class="panel">
+        <div class="detail-header">
+          <button class="back-btn" onclick="showSection('runs')">←</button>
+          <div>
+            <div class="detail-title" id="detailTitle">Run detail</div>
+            <div class="detail-meta" id="detailMeta"></div>
+          </div>
+          <div style="margin-left:auto;" id="detailBadge"></div>
+        </div>
+        <div class="jobs-grid" id="jobsGrid"></div>
+        <div class="panel-header" style="border-top:1px solid var(--border); border-bottom:none;">
+          <span class="panel-title">📡 Logs en tiempo real</span>
+          <span id="wsStatus" style="font-size:11px; color:var(--muted);">desconectado</span>
+        </div>
+        <div class="log-viewer" id="logViewer">
+          <div style="color:var(--muted);">Esperando logs...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SECTION: PIPELINES ── -->
+    <div id="section-pipelines" style="display:none;">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Pipelines registrados</span>
+          <button class="btn btn-sm" onclick="loadPipelines()">↻ Actualizar</button>
+        </div>
+        <div id="pipelinesContent">
+          <div class="empty"><div class="empty-icon">📋</div>Cargando pipelines...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SECTION: NEW PIPELINE ── -->
+    <div id="section-new-pipeline" style="display:none;">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Registrar nuevo pipeline</span>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Contenido YAML del pipeline</label>
+            <textarea id="yamlInput" placeholder="name: mi-pipeline
+description: Descripción del pipeline
+
+jobs:
+  build:
+    image: python:3.11-slim
+    steps:
+      - name: Compilar
+        run: echo 'Build OK'
+
+  test:
+    image: python:3.11-slim
+    needs: [build]
+    steps:
+      - name: Tests
+        run: echo 'Tests OK'"></textarea>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn btn-primary" onclick="createPipeline()">⚡ Registrar pipeline</button>
+            <button class="btn" onclick="loadTemplate()">📄 Cargar ejemplo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trigger run after create -->
+      <div class="panel" id="triggerPanel" style="display:none;">
+        <div class="panel-header">
+          <span class="panel-title">Disparar ejecución</span>
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Rama</label>
+              <input type="text" id="branchInput" value="main"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Trigger</label>
+              <select id="triggerInput">
+                <option value="manual">Manual</option>
+                <option value="push">Push</option>
+                <option value="api">API</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <button class="btn btn-primary" onclick="triggerRun()">▶ Ejecutar pipeline</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = 'http://localhost:8000';
+let currentPipelineId = null;
+let currentRunId      = null;
+let currentWs         = null;
+let pollTimer         = null;
+
+// ── NAVIGATION ──────────────────────────────────────────────────────────────
+
+function showSection(name) {
+  ['runs','run-detail','pipelines','new-pipeline'].forEach(s => {
+    document.getElementById(`section-${s}`).style.display = 'none';
+    const btn = document.getElementById(`nav-${s}`);
+    if (btn) btn.classList.remove('active');
+  });
+  document.getElementById(`section-${name}`).style.display = 'block';
+  const btn = document.getElementById(`nav-${name}`);
+  if (btn) btn.classList.add('active');
+
+  if (name === 'runs')         loadRuns();
+  if (name === 'pipelines')    loadPipelines();
+  if (name === 'new-pipeline') { currentPipelineId = null; document.getElementById('triggerPanel').style.display='none'; }
+}
+
+// ── API HELPERS ──────────────────────────────────────────────────────────────
+
+async function apiFetch(path, opts = {}) {
+  const r = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+// ── HEALTH CHECK ─────────────────────────────────────────────────────────────
+
+async function checkHealth() {
+  const el   = document.getElementById('apiStatus');
+  const text = document.getElementById('apiStatusText');
+  try {
+    await apiFetch('/health');
+    el.className   = 'api-status online';
+    text.textContent = 'API online';
+  } catch {
+    el.className   = 'api-status offline';
+    text.textContent = 'API offline';
+  }
+}
+
+// ── STATS ────────────────────────────────────────────────────────────────────
+
+async function updateStats() {
+  try {
+    const runs = await apiFetch('/runs');
+    const total   = runs.length;
+    const success = runs.filter(r => r.status === 'success').length;
+    const failed  = runs.filter(r => r.status === 'failed').length;
+    const running = runs.filter(r => r.status === 'running' || r.status === 'pending').length;
+    document.getElementById('statTotal').textContent   = total;
+    document.getElementById('statSuccess').textContent = success;
+    document.getElementById('statFailed').textContent  = failed;
+    document.getElementById('statRunning').textContent = running;
+  } catch {}
+}
+
+// ── RUNS LIST ────────────────────────────────────────────────────────────────
+
+async function loadRuns() {
+  try {
+    const runs = await apiFetch('/runs');
+    updateStats();
+    const el = document.getElementById('runsContent');
+
+    if (!runs.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">⚡</div>No hay runs aún. Crea un pipeline y dispara una ejecución.</div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <table class="runs-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Pipeline</th>
+            <th>Estado</th>
+            <th>Rama</th>
+            <th>Inicio</th>
+            <th>Duración</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${runs.map(r => `
+            <tr onclick="openRunDetail('${r.id}')">
+              <td style="color:var(--muted); font-size:11px;">${r.id.slice(0,8)}…</td>
+              <td style="color:#fff;">${r.pipeline_id.slice(0,8)}…</td>
+              <td>${statusBadge(r.status)}</td>
+              <td style="color:var(--accent2);">${r.branch}</td>
+              <td>${fmtDate(r.started_at)}</td>
+              <td>${r.duration ? r.duration.toFixed(2)+'s' : '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    document.getElementById('runsContent').innerHTML =
+      `<div class="empty" style="color:var(--danger);">Error al cargar runs: ${e.message}</div>`;
+  }
+}
+
+// ── RUN DETAIL ───────────────────────────────────────────────────────────────
+
+async function openRunDetail(runId) {
+  currentRunId = runId;
+  showSection('run-detail');
+
+  // Clear log viewer
+  document.getElementById('logViewer').innerHTML =
+    '<div style="color:var(--muted);">Conectando al WebSocket...</div>';
+  document.getElementById('jobsGrid').innerHTML = '';
+
+  try {
+    const run = await apiFetch(`/runs/${runId}`);
+    renderRunDetail(run);
+    connectWebSocket(runId);
+
+    // Poll if still running
+    if (run.status === 'running' || run.status === 'pending') {
+      pollTimer = setInterval(async () => {
+        const updated = await apiFetch(`/runs/${runId}`);
+        renderRunDetail(updated);
+        if (updated.status !== 'running' && updated.status !== 'pending') {
+          clearInterval(pollTimer);
+        }
+      }, 2000);
+    }
+  } catch (e) {
+    toast('Error al cargar run: ' + e.message, 'error');
+  }
+}
+
+function renderRunDetail(run) {
+  document.getElementById('detailTitle').textContent =
+    `Run ${run.id.slice(0,8)}`;
+  document.getElementById('detailMeta').textContent  =
+    `Pipeline ${run.pipeline_id.slice(0,8)} · ${run.branch} · ${fmtDate(run.started_at)}`;
+  document.getElementById('detailBadge').innerHTML   = statusBadge(run.status);
+
+  const grid = document.getElementById('jobsGrid');
+  if (!Object.keys(run.jobs).length) {
+    grid.innerHTML = `<div style="color:var(--muted); padding:8px;">Sin jobs aún...</div>`;
+    return;
+  }
+
+  grid.innerHTML = Object.entries(run.jobs).map(([key, job]) => `
+    <div class="job-card ${job.status}">
+      <div class="job-name">${key}</div>
+      ${statusBadge(job.status)}
+      <div class="job-duration" style="margin-top:6px;">
+        ${job.duration ? '⏱ ' + job.duration.toFixed(2) + 's' : ''}
+      </div>
+      <div class="steps-list">
+        ${(job.steps || []).map(s => `
+          <div class="step-item">
+            <span class="step-icon">${stepIcon(s.status)}</span>
+            <span>${s.step_name}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── WEBSOCKET LOGS ───────────────────────────────────────────────────────────
+
+function connectWebSocket(runId) {
+  if (currentWs) { currentWs.close(); currentWs = null; }
+
+  const wsUrl = `ws://localhost:8000/runs/${runId}/logs`;
+  const ws    = new WebSocket(wsUrl);
+  currentWs   = ws;
+
+  const viewer  = document.getElementById('logViewer');
+  const wsStatus = document.getElementById('wsStatus');
+
+  ws.onopen = () => {
+    wsStatus.textContent = '🟢 conectado';
+    viewer.innerHTML = '';
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'log') {
+      appendLog(msg.job_key, msg.step, msg.line);
+    } else if (msg.type === 'job_started') {
+      appendLog(msg.job_key, 'runner', `▶ Job iniciado (${msg.image || ''})`);
+    } else if (msg.type === 'job_finished') {
+      appendLog(msg.job_key, 'runner',
+        `${msg.status === 'success' ? '✓' : '✗'} Job terminado — ${msg.status} (${(msg.duration||0).toFixed(2)}s)`);
+    } else if (msg.type === 'run_finished') {
+      wsStatus.textContent = '⚪ run finalizado';
+      ws.close();
+    } else if (msg.type === 'error') {
+      appendLog('error', 'runner', msg.error, 'error');
+    }
+  };
+
+  ws.onclose = () => { wsStatus.textContent = '⚪ desconectado'; };
+  ws.onerror = () => { wsStatus.textContent = '🔴 error de conexión'; };
+}
+
+function appendLog(job, step, line, cls = '') {
+  const viewer = document.getElementById('logViewer');
+  const now    = new Date().toLocaleTimeString('es-CL', { hour12: false });
+
+  // Detectar tipo de línea
+  let lineClass = cls;
+  if (!cls) {
+    if (line.startsWith('$'))         lineClass = 'cmd';
+    else if (line.includes('✓'))      lineClass = 'success';
+    else if (line.includes('✗') || line.toLowerCase().includes('error')) lineClass = 'error';
+  }
+
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.innerHTML = `
+    <span class="log-time">${now}</span>
+    <span class="log-job">${job}</span>
+    <span class="log-text ${lineClass}">${escHtml(line)}</span>
+  `;
+  viewer.appendChild(div);
+  viewer.scrollTop = viewer.scrollHeight;
+}
+
+// ── PIPELINES ────────────────────────────────────────────────────────────────
+
+async function loadPipelines() {
+  try {
+    const pipelines = await apiFetch('/pipelines');
+    const el = document.getElementById('pipelinesContent');
+
+    if (!pipelines.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div>No hay pipelines. Crea el primero.</div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <table class="runs-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>Nombre</th><th>Descripción</th><th>Creado</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pipelines.map(p => `
+            <tr>
+              <td style="color:var(--muted); font-size:11px;">${p.id.slice(0,8)}…</td>
+              <td style="color:#fff; font-weight:600;">${p.name}</td>
+              <td style="color:var(--muted);">${p.description || '—'}</td>
+              <td>${fmtDate(p.created_at)}</td>
+              <td>
+                <button class="btn btn-sm btn-primary"
+                  onclick="quickTrigger('${p.id}', event)">▶ Ejecutar</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    document.getElementById('pipelinesContent').innerHTML =
+      `<div class="empty" style="color:var(--danger);">Error: ${e.message}</div>`;
+  }
+}
+
+async function quickTrigger(pipelineId, e) {
+  e.stopPropagation();
+  try {
+    const run = await apiFetch(`/pipelines/${pipelineId}/runs`, {
+      method: 'POST',
+      body: JSON.stringify({ branch: 'main', trigger: 'manual' }),
+    });
+    toast('Run iniciado: ' + run.id.slice(0,8), 'success');
+    setTimeout(() => { showSection('runs'); openRunDetail(run.id); }, 600);
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+// ── CREATE PIPELINE ──────────────────────────────────────────────────────────
+
+async function createPipeline() {
+  const yaml = document.getElementById('yamlInput').value.trim();
+  if (!yaml) { toast('Ingresa el YAML del pipeline', 'error'); return; }
+
+  try {
+    const p = await apiFetch('/pipelines', {
+      method: 'POST',
+      body: JSON.stringify({ yaml_content: yaml }),
+    });
+    currentPipelineId = p.id;
+    document.getElementById('triggerPanel').style.display = 'block';
+    toast('Pipeline registrado: ' + p.name, 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+async function triggerRun() {
+  if (!currentPipelineId) { toast('Primero registra un pipeline', 'error'); return; }
+  const branch  = document.getElementById('branchInput').value  || 'main';
+  const trigger = document.getElementById('triggerInput').value || 'manual';
+
+  try {
+    const run = await apiFetch(`/pipelines/${currentPipelineId}/runs`, {
+      method: 'POST',
+      body: JSON.stringify({ branch, trigger }),
+    });
+    toast('Run iniciado', 'success');
+    setTimeout(() => { showSection('runs'); openRunDetail(run.id); }, 600);
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+function loadTemplate() {
+  document.getElementById('yamlInput').value =
+`name: demo-pipeline
+description: Pipeline de demostración del orquestador
+
+on:
+  manual: true
+
+env:
+  APP_ENV: development
+
+jobs:
+  build:
+    image: python:3.11-slim
+    steps:
+      - name: Instalar dependencias
+        run: echo "pip install -r requirements.txt"
+      - name: Compilar
+        run: echo "Build completado exitosamente"
+
+  lint:
+    image: python:3.11-slim
+    steps:
+      - name: Análisis estático
+        run: echo "Lint OK - sin errores"
+
+  test:
+    image: python:3.11-slim
+    needs: [build, lint]
+    steps:
+      - name: Tests unitarios
+        run: echo "pytest tests/ - 42 passed"
+      - name: Coverage
+        run: echo "Coverage 87%"
+
+  deploy:
+    image: alpine:3.18
+    needs: [test]
+    steps:
+      - name: Deploy
+        run: echo "Deploy exitoso a producción"`;
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+
+function refreshAll() {
+  updateStats();
+  const active = document.querySelector('.nav-btn.active');
+  if (active?.id === 'nav-runs')      loadRuns();
+  if (active?.id === 'nav-pipelines') loadPipelines();
+}
+
+function statusBadge(status) {
+  const map = {
+    success: ['badge-success', '✓ success'],
+    failed:  ['badge-failed',  '✗ failed'],
+    running: ['badge-running', '● running'],
+    pending: ['badge-pending', '○ pending'],
+    skipped: ['badge-skipped', '— skipped'],
+  };
+  const [cls, label] = map[status] || ['badge-skipped', status];
+  return `<span class="badge ${cls}"><span class="badge-dot"></span>${label}</span>`;
+}
+
+function stepIcon(status) {
+  return { success:'✓', failed:'✗', running:'●', skipped:'—', pending:'○' }[status] || '?';
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const normalized = iso.endsWith('Z') ? iso : iso + 'Z';
+  const d = new Date(normalized);
+  return d.toLocaleString('es-CL', { 
+    dateStyle: 'short', 
+    timeStyle: 'short',
+    timeZone: 'America/Santiago'
+  });
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = 'show ' + type;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.className = ''; }, 3000);
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+
+checkHealth();
+setInterval(checkHealth, 10000);
+updateStats();
+loadRuns();
+</script>
+</body>
+</html>

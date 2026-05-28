@@ -10,17 +10,17 @@ Endpoints:
   GET    /runs/{id}                    — estado de un run
   WS     /runs/{id}/logs               — logs en tiempo real (WebSocket)
   GET    /health                       — health check
-  
 """
 
 from __future__ import annotations
 
 import asyncio
 import uuid
-
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+import os
 from orchestrator.api.schemas import (
     CreatePipelineRequest,
     ErrorResponse,
@@ -29,13 +29,13 @@ from orchestrator.api.schemas import (
     TriggerRunRequest,
     run_to_response,
 )
-from orchestrator.api.store import NotFoundError, store
+from orchestrator.storage.db_store import NotFoundError, store
 from orchestrator.api.websocket import ws_manager
 from orchestrator.core.models import TriggerType
 from orchestrator.core.parser import PipelineParseError, PipelineParser
 from orchestrator.execution.docker_runner import DockerRunner, DockerRunnerError
 from orchestrator.execution.scheduler import Scheduler
-
+from orchestrator.storage.database import init_db
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
@@ -52,6 +52,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup():
+    """Inicializa la base de datos al arrancar la app."""
+    init_db()
+    # Montar archivos estáticos del dashboard si existe la carpeta
+    dashboard_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "dashboard"
+    )
+    if os.path.exists(dashboard_path):
+        app.mount("/dashboard", StaticFiles(directory=dashboard_path, html=True), name="dashboard")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirige al dashboard."""
+    dashboard_index = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "dashboard", "index.html"
+    )
+    if os.path.exists(dashboard_index):
+        return FileResponse(dashboard_index)
+    return {"message": "CI/CD Orchestrator API", "docs": "/docs", "dashboard": "/dashboard"}
 
 parser   = PipelineParser()
 
@@ -233,6 +257,9 @@ async def _execute_run(run_id: str, definition) -> None:
         store.save_run(original)
 
     except DockerRunnerError as e:
+        print(f"[ERROR] DockerRunnerError: {e}")
+        import traceback
+        traceback.print_exc()
         # Docker no disponible — marcar como fallido
         from orchestrator.core.models import RunStatus
         from datetime import datetime

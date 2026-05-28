@@ -5,13 +5,12 @@ Ejecutar con: pytest tests/test_api.py -v
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 from fastapi.testclient import TestClient
-
 from orchestrator.api.app import app
 from orchestrator.api.store import store
 from orchestrator.core.models import JobResult, PipelineRun, RunStatus
+from orchestrator.storage.database import init_db, get_engine, Base
 
 VALID_YAML = """
 name: test-pipeline
@@ -39,17 +38,33 @@ jobs: {}
 
 
 @pytest.fixture(autouse=True)
-def reset_store():
-    """Limpia el store antes de cada test para evitar contaminación."""
-    store._pipelines.clear()
-    store._runs.clear()
+def use_memory_db(tmp_path):
+    import orchestrator.storage.database as db_module
+    from orchestrator.storage.database import create_db_engine
+    from sqlalchemy.orm import sessionmaker
+
+    db_url = f"sqlite:///{tmp_path}/test.db"
+    test_engine = create_db_engine(db_url)
+    Base.metadata.create_all(test_engine)
+
+    db_module._engine = test_engine
+    db_module._SessionFactory = sessionmaker(
+        bind=test_engine, autocommit=False, autoflush=False
+    )
+
+    import orchestrator.storage.db_store as ds
+    ds.store = ds.DatabaseStore()
+
     yield
+
+    db_module._engine = None
+    db_module._SessionFactory = None
 
 
 @pytest.fixture
 def client():
+    from orchestrator.api.app import app
     return TestClient(app)
-
 
 # ---------------------------------------------------------------------------
 # Health
