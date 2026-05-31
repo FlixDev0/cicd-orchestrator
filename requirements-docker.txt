@@ -1,0 +1,14 @@
+# Dependencias para el contenedor Docker (sin asyncpg ni pydantic-core problemáticos)
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+pydantic-settings==2.2.1
+sqlalchemy==2.0.30
+aiosqlite==0.20.0
+PyYAML==6.0.1
+networkx==3.3
+docker==7.0.0
+websockets==12.0
+cryptography==42.0.7
+python-multipart==0.0.9
+anyio==4.3.0

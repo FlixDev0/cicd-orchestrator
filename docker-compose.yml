@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+
+  # ── API + Dashboard ──────────────────────────────────────────────────────
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cicd-orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:///./cicd_orchestrator.db
+    volumes:
+      # Persistir la base de datos SQLite entre reinicios
+      - ./data:/app/data
+      # Montar el socket de Docker para que el orquestador pueda
+      # crear contenedores en el Docker host
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── PostgreSQL (opcional, para producción) ───────────────────────────────
+  # Descomenta este bloque y cambia DATABASE_URL para usar PostgreSQL
+  #
+  # db:
+  #   image: postgres:16-alpine
+  #   container_name: cicd-db
+  #   environment:
+  #     POSTGRES_DB:       cicd_orchestrator
+  #     POSTGRES_USER:     cicd
+  #     POSTGRES_PASSWORD: cicd_secret
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U cicd"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #
+  # Cambiar en orchestrator:
+  #   DATABASE_URL: postgresql://cicd:cicd_secret@db/cicd_orchestrator
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+
+# volumes:
+#   postgres_data:
